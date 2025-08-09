@@ -119,10 +119,18 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
     switch key.String() {
     case "up", "k":
         if len(items) == 0 { return m, nil }
-        if cur > 0 { m.selectedIdx[col] = cur - 1 }
+        order := m.sortedOrder(col)
+        pos := indexOf(order, cur)
+        if pos == -1 { pos = 0 }
+        if pos > 0 { pos-- }
+        m.selectedIdx[col] = order[pos]
     case "down", "j":
         if len(items) == 0 { return m, nil }
-        if cur < len(items)-1 { m.selectedIdx[col] = cur + 1 }
+        order := m.sortedOrder(col)
+        pos := indexOf(order, cur)
+        if pos == -1 { pos = 0 }
+        if pos < len(order)-1 { pos++ }
+        m.selectedIdx[col] = order[pos]
     case "left", "h":
         m.focused = prevStatus(m.focused)
     case "right", "l":
@@ -160,9 +168,15 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
         m.deleteTask(col, cur)
         _ = storage.SaveTasks(m.tasksByStatus)
     case "g":
-        m.selectedIdx[col] = 0
+        if len(items) > 0 {
+            order := m.sortedOrder(col)
+            m.selectedIdx[col] = order[0]
+        }
     case "G":
-        if len(items) > 0 { m.selectedIdx[col] = len(items) - 1 }
+        if len(items) > 0 {
+            order := m.sortedOrder(col)
+            m.selectedIdx[col] = order[len(order)-1]
+        }
     }
     return m, nil
 }
@@ -301,6 +315,30 @@ func (m model) renderItems(status domain.TaskStatus) []string {
         _ = i // silence unused variable in case
     }
     return lines
+}
+
+// sortedOrder returns the indices of tasks in the given status, ordered the
+// same as shown in the UI (starred first, then newest first).
+func (m model) sortedOrder(status domain.TaskStatus) []int {
+    original := m.tasksByStatus[status]
+    order := make([]int, len(original))
+    for i := range order { order[i] = i }
+    sort.SliceStable(order, func(i, j int) bool {
+        ti := original[order[i]]
+        tj := original[order[j]]
+        if ti.IsStarred != tj.IsStarred {
+            return ti.IsStarred
+        }
+        return ti.CreatedAt > tj.CreatedAt
+    })
+    return order
+}
+
+func indexOf(slice []int, value int) int {
+    for i, v := range slice {
+        if v == value { return i }
+    }
+    return -1
 }
 
 func statusTitle(s domain.TaskStatus) string {
