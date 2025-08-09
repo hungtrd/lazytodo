@@ -145,6 +145,7 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
     case "n":
         m.mode = modeNew
         m.input.SetValue("")
+        m.input.Focus()
         return m, textinput.Blink
     case "e":
         if len(items) == 0 { return m, nil }
@@ -152,6 +153,7 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
         m.editingRef = &taskRef{status: col, index: cur}
         m.input.SetValue(items[cur].Content)
         m.input.CursorEnd()
+        m.input.Focus()
         return m, textinput.Blink
     case "backspace", "delete":
         if len(items) == 0 { return m, nil }
@@ -169,6 +171,7 @@ func (m model) updateInputMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
     case tea.KeyEsc:
         m.mode = modeList
         m.editingRef = nil
+        m.input.Blur()
         return m, nil
     case tea.KeyEnter:
         content := strings.TrimSpace(m.input.Value())
@@ -185,6 +188,7 @@ func (m model) updateInputMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
             }
         }
         m.mode = modeList
+        m.input.Blur()
         return m, nil
     }
     var cmd tea.Cmd
