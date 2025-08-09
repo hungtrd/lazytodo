@@ -1,107 +1,346 @@
 package main
 
 import (
-	"fmt"
-	"os"
+    "fmt"
+    "os"
+    "sort"
+    "strings"
+    "time"
 
-	tea "github.com/charmbracelet/bubbletea"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/bubbles/textinput"
+    "github.com/charmbracelet/lipgloss"
+
+    "github.com/hungtrd/lazytodo/internal/domain"
+)
+
+type uiMode int
+
+const (
+    modeList uiMode = iota
+    modeNew
+    modeEdit
+)
+
+var (
+    statusOrder = []domain.TaskStatus{
+        domain.TaskStatusTodo,
+        domain.TaskStatusInProgress,
+        domain.TaskStatusDone,
+    }
+
+    headerStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+    columnStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 1)
+    focusedColStyle  = columnStyle.Copy().BorderForeground(lipgloss.Color("12"))
+    unfocusedColStyle = columnStyle.Copy().BorderForeground(lipgloss.Color("240"))
+    selectedItemStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229"))
+    starredStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+    doneStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Strikethrough(true)
+    footerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).MarginTop(1)
 )
 
 type model struct {
-	choices  []string         // items on the to-do list
-	cursor   int              // which to-do list item our cursor is pointing at
-	selected map[int]struct{} // which to-do items are selected
+    width  int
+    height int
+
+    tasksByStatus map[domain.TaskStatus][]domain.Task
+    selectedIdx   map[domain.TaskStatus]int
+    focused       domain.TaskStatus
+
+    mode       uiMode
+    input      textinput.Model
+    editingRef *taskRef
+}
+
+type taskRef struct {
+    status domain.TaskStatus
+    index  int
+}
+
+func initialTasks() map[domain.TaskStatus][]domain.Task {
+    now := time.Now().Unix()
+    return map[domain.TaskStatus][]domain.Task{
+        domain.TaskStatusTodo: {
+            {Id: newID(), Content: "Set up project", Status: domain.TaskStatusTodo, CreatedAt: now},
+            {Id: newID(), Content: "Write first task", Status: domain.TaskStatusTodo, CreatedAt: now, IsStarred: true},
+        },
+        domain.TaskStatusInProgress: {
+            {Id: newID(), Content: "Implement TUI", Status: domain.TaskStatusInProgress, CreatedAt: now},
+        },
+        domain.TaskStatusDone: {
+            {Id: newID(), Content: "Scaffold domain model", Status: domain.TaskStatusDone, CreatedAt: now},
+        },
+    }
 }
 
 func initialModel() model {
-	return model{
-		// Our to-do list is a grocery list
-		choices: []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-
-		// A map which indicates which choices are selected. We're using
-		// the  map like a mathematical set. The keys refer to the indexes
-		// of the `choices` slice, above.
-		selected: make(map[int]struct{}),
-	}
+    ti := textinput.New()
+    ti.Placeholder = "Task content..."
+    ti.Prompt = "➤ "
+    ti.CharLimit = 256
+    return model{
+        tasksByStatus: initialTasks(),
+        selectedIdx: map[domain.TaskStatus]int{
+            domain.TaskStatusTodo:       0,
+            domain.TaskStatusInProgress: 0,
+            domain.TaskStatusDone:       0,
+        },
+        focused: domain.TaskStatusTodo,
+        mode:    modeList,
+        input:   ti,
+    }
 }
 
+func (m model) Init() tea.Cmd { return nil }
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	// Is it a key press?
-	case tea.KeyMsg:
+    switch msg := msg.(type) {
+    case tea.WindowSizeMsg:
+        m.width, m.height = msg.Width, msg.Height
+        return m, nil
+    case tea.KeyMsg:
+        if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
+            return m, tea.Quit
+        }
+        switch m.mode {
+        case modeList:
+            return m.updateListMode(msg)
+        case modeNew, modeEdit:
+            return m.updateInputMode(msg)
+        }
+    }
+    return m, nil
+}
 
-		// Cool, what was the actual key pressed?
-		switch msg.String() {
+func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+    col := m.focused
+    items := m.tasksByStatus[col]
+    cur := m.selectedIdx[col]
 
-		// These keys should exit the program.
-		case "ctrl+c", "q":
-			return m, tea.Quit
+    switch key.String() {
+    case "up", "k":
+        if len(items) == 0 { return m, nil }
+        if cur > 0 { m.selectedIdx[col] = cur - 1 }
+    case "down", "j":
+        if len(items) == 0 { return m, nil }
+        if cur < len(items)-1 { m.selectedIdx[col] = cur + 1 }
+    case "left", "h":
+        m.focused = prevStatus(m.focused)
+    case "right", "l":
+        m.focused = nextStatus(m.focused)
+    case "[":
+        m = m.moveTask(col, cur, prevStatus(col))
+    case "]":
+        m = m.moveTask(col, cur, nextStatus(col))
+    case " ", "x":
+        // toggle done: if not done -> move to done; if done -> move to todo
+        target := domain.TaskStatusDone
+        if col == domain.TaskStatusDone { target = domain.TaskStatusTodo }
+        m = m.moveTask(col, cur, target)
+    case "s":
+        if len(items) == 0 { return m, nil }
+        it := items[cur]
+        it.IsStarred = !it.IsStarred
+        m.tasksByStatus[col][cur] = it
+    case "n":
+        m.mode = modeNew
+        m.input.SetValue("")
+        return m, textinput.Blink
+    case "e":
+        if len(items) == 0 { return m, nil }
+        m.mode = modeEdit
+        m.editingRef = &taskRef{status: col, index: cur}
+        m.input.SetValue(items[cur].Content)
+        m.input.CursorEnd()
+        return m, textinput.Blink
+    case "backspace", "delete":
+        if len(items) == 0 { return m, nil }
+        m.deleteTask(col, cur)
+    case "g":
+        m.selectedIdx[col] = 0
+    case "G":
+        if len(items) > 0 { m.selectedIdx[col] = len(items) - 1 }
+    }
+    return m, nil
+}
 
-		// The "up" and "k" keys move the cursor up
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
+func (m model) updateInputMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+    switch key.Type {
+    case tea.KeyEsc:
+        m.mode = modeList
+        m.editingRef = nil
+        return m, nil
+    case tea.KeyEnter:
+        content := strings.TrimSpace(m.input.Value())
+        if content != "" {
+            if m.mode == modeNew {
+                m.addTask(content)
+            } else if m.mode == modeEdit && m.editingRef != nil {
+                ref := *m.editingRef
+                t := m.tasksByStatus[ref.status][ref.index]
+                t.Content = content
+                t.UpdatedAt = time.Now().Unix()
+                m.tasksByStatus[ref.status][ref.index] = t
+                m.editingRef = nil
+            }
+        }
+        m.mode = modeList
+        return m, nil
+    }
+    var cmd tea.Cmd
+    m.input, cmd = m.input.Update(key)
+    return m, cmd
+}
 
-		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
-				m.cursor++
-			}
+func (m *model) addTask(content string) {
+    now := time.Now().Unix()
+    t := domain.Task{Id: newID(), Content: content, Status: domain.TaskStatusTodo, CreatedAt: now}
+    m.tasksByStatus[domain.TaskStatusTodo] = append([]domain.Task{t}, m.tasksByStatus[domain.TaskStatusTodo]...)
+    m.focused = domain.TaskStatusTodo
+    m.selectedIdx[domain.TaskStatusTodo] = 0
+}
 
-		case "enter", " ":
-			_, ok := m.selected[m.cursor]
-			if ok {
-				delete(m.selected, m.cursor)
-			} else {
-				m.selected[m.cursor] = struct{}{}
-			}
-		}
-	}
+func (m model) moveTask(from domain.TaskStatus, index int, to domain.TaskStatus) model {
+    if from == to { return m }
+    list := m.tasksByStatus[from]
+    if index < 0 || index >= len(list) { return m }
+    task := list[index]
+    // remove from source
+    m.tasksByStatus[from] = append(list[:index], list[index+1:]...)
+    // insert at top of target
+    task.Status = to
+    task.UpdatedAt = time.Now().Unix()
+    m.tasksByStatus[to] = append([]domain.Task{task}, m.tasksByStatus[to]...)
+    // adjust selection
+    if index >= len(m.tasksByStatus[from]) {
+        m.selectedIdx[from] = max(0, len(m.tasksByStatus[from])-1)
+    }
+    m.focused = to
+    m.selectedIdx[to] = 0
+    return m
+}
 
-	// Return the updated model to the Bubble Tea runtime for processing.
-	// Note that we're not returning a command.
-	return m, nil
+func (m *model) deleteTask(status domain.TaskStatus, index int) {
+    list := m.tasksByStatus[status]
+    if index < 0 || index >= len(list) { return }
+    m.tasksByStatus[status] = append(list[:index], list[index+1:]...)
+    if index >= len(m.tasksByStatus[status]) {
+        m.selectedIdx[status] = max(0, len(m.tasksByStatus[status])-1)
+    }
 }
 
 func (m model) View() string {
-	// The header
-	s := "What should we buy at the market?\n\n"
+    // Layout
+    usableWidth := max(30, m.width-4)
+    colWidth := usableWidth / 3
+    sections := make([]string, 0, 3)
+    for _, st := range statusOrder {
+        title := statusTitle(st)
+        items := m.renderItems(st)
+        header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
+        content := header + "\n" + strings.Join(items, "\n")
+        style := unfocusedColStyle
+        if m.focused == st { style = focusedColStyle }
+        sections = append(sections, style.Width(colWidth).Render(content))
+    }
+    board := lipgloss.JoinHorizontal(lipgloss.Top, sections...)
 
-	// Iterate over our choices
-	for i, choice := range m.choices {
+    help := footerStyle.Render("h/l: focus column  j/k: move  [ / ]: move task  n: new  e: edit  s: star  space/x: toggle done  del: delete  q: quit  esc: cancel")
 
-		// Is the cursor pointing at this choice?
-		cursor := " " // no cursor
-		if m.cursor == i {
-			cursor = ">" // cursor!
-		}
-
-		// Is this choice selected?
-		checked := " " // not selected
-		if _, ok := m.selected[i]; ok {
-			checked = "x" // selected!
-		}
-
-		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
-	}
-
-	// The footer
-	s += "\nPress q to quit.\n"
-
-	// Send the UI for rendering
-	return s
+    if m.mode == modeNew {
+        prompt := footerStyle.Copy().Bold(true).Render("New Task:")
+        return board + "\n" + prompt + "\n" + m.input.View() + "\n" + help
+    }
+    if m.mode == modeEdit {
+        prompt := footerStyle.Copy().Bold(true).Render("Edit Task:")
+        return board + "\n" + prompt + "\n" + m.input.View() + "\n" + help
+    }
+    return board + "\n" + help
 }
 
-func (m model) Init() tea.Cmd {
-	// Just return `nil`, which means "no I/O right now, please."
-	return nil
+func (m model) renderItems(status domain.TaskStatus) []string {
+    list := append([]domain.Task(nil), m.tasksByStatus[status]...)
+    // show starred first
+    sort.SliceStable(list, func(i, j int) bool {
+        if list[i].IsStarred != list[j].IsStarred {
+            return list[i].IsStarred
+        }
+        return list[i].CreatedAt > list[j].CreatedAt
+    })
+
+    // Map back indices for selection highlighting
+    indexInOriginal := func(task domain.Task) int {
+        for i, t := range m.tasksByStatus[status] {
+            if t.Id == task.Id { return i }
+        }
+        return -1
+    }
+
+    lines := make([]string, 0, len(list))
+    for i, t := range list {
+        star := "  "
+        if t.IsStarred { star = starredStyle.Render("★ ") }
+        text := t.Content
+        if status == domain.TaskStatusDone { text = doneStyle.Render(text) }
+        line := fmt.Sprintf("%s%s", star, text)
+        // highlight if this is the selected item in original order
+        if indexInOriginal(t) == m.selectedIdx[status] && m.focused == status && m.mode == modeList {
+            line = selectedItemStyle.Render(line)
+        }
+        // truncate to column width - padding best effort
+        lines = append(lines, line)
+        _ = i // silence unused variable in case
+    }
+    return lines
 }
+
+func statusTitle(s domain.TaskStatus) string {
+    switch s {
+    case domain.TaskStatusTodo:
+        return "Todo"
+    case domain.TaskStatusInProgress:
+        return "In Progress"
+    case domain.TaskStatusDone:
+        return "Done"
+    default:
+        return "Unknown"
+    }
+}
+
+func prevStatus(s domain.TaskStatus) domain.TaskStatus {
+    switch s {
+    case domain.TaskStatusTodo:
+        return domain.TaskStatusTodo
+    case domain.TaskStatusInProgress:
+        return domain.TaskStatusTodo
+    case domain.TaskStatusDone:
+        return domain.TaskStatusInProgress
+    default:
+        return domain.TaskStatusTodo
+    }
+}
+
+func nextStatus(s domain.TaskStatus) domain.TaskStatus {
+    switch s {
+    case domain.TaskStatusTodo:
+        return domain.TaskStatusInProgress
+    case domain.TaskStatusInProgress:
+        return domain.TaskStatusDone
+    case domain.TaskStatusDone:
+        return domain.TaskStatusDone
+    default:
+        return domain.TaskStatusDone
+    }
+}
+
+func newID() string { return fmt.Sprintf("%d", time.Now().UnixNano()) }
+
+func max(a, b int) int { if a > b { return a }; return b }
 
 func main() {
-	p := tea.NewProgram(initialModel())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
-		os.Exit(1)
-	}
+    p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+    if _, err := p.Run(); err != nil {
+        fmt.Printf("error: %v\n", err)
+        os.Exit(1)
+    }
 }
