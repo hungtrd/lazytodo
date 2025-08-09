@@ -261,9 +261,10 @@ func (m *model) deleteTask(status domain.TaskStatus, index int) {
 
 func (m model) View() string {
     // Layout
-    usableWidth := max(30, m.width-4)
+    usableWidth := max(30, m.width-2)
     colWidth := usableWidth / 3
     sections := make([]string, 0, 3)
+    hFrame, _ := columnStyle.GetFrameSize()
     for _, st := range statusOrder {
         title := statusTitle(st)
         items := m.renderItems(st)
@@ -273,13 +274,15 @@ func (m model) View() string {
         if m.focused == st { style = focusedColStyle }
         width := colWidth
         if m.vertical { width = usableWidth }
-        sections = append(sections, style.Width(width).Render(content))
+        contentWidth := max(0, width - hFrame)
+        sections = append(sections, style.Width(contentWidth).Render(content))
     }
     var board string
     if m.vertical {
         board = lipgloss.JoinVertical(lipgloss.Left, sections...)
     } else {
-        board = lipgloss.JoinHorizontal(lipgloss.Top, sections...)
+        gap := lipgloss.NewStyle().Width(1).Render(" ")
+        board = lipgloss.JoinHorizontal(lipgloss.Top, interleave(sections, gap)...)
     }
 
     help := footerStyle.Render("h/l: focus column  j/k: move  [ \\ / ]: move task  n: new  e: edit  s: star  space/x: toggle done  del: delete  v: toggle layout  q: quit  esc: cancel")
@@ -400,6 +403,17 @@ func nextStatus(s domain.TaskStatus) domain.TaskStatus {
 func newID() string { return fmt.Sprintf("%d", time.Now().UnixNano()) }
 
 func max(a, b int) int { if a > b { return a }; return b }
+
+// interleave returns a slice like: a0, sep, a1, sep, a2 ...
+func interleave(items []string, sep string) []string {
+    if len(items) == 0 { return items }
+    out := make([]string, 0, len(items)*2-1)
+    for i, s := range items {
+        if i > 0 { out = append(out, sep) }
+        out = append(out, s)
+    }
+    return out
+}
 
 func main() {
     p := tea.NewProgram(initialModel(), tea.WithAltScreen())
