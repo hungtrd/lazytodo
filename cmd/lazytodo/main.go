@@ -81,6 +81,7 @@ func initialModel() model {
     ti.Placeholder = "Task content..."
     ti.Prompt = "➤ "
     ti.CharLimit = 256
+    cfg, _ := storage.LoadConfig()
     return model{
         tasksByStatus: initialTasks(),
         selectedIdx: map[domain.TaskStatus]int{
@@ -91,7 +92,7 @@ func initialModel() model {
         focused: domain.TaskStatusTodo,
         mode:    modeList,
         input:   ti,
-        vertical: false,
+        vertical: cfg.Vertical,
     }
 }
 
@@ -184,6 +185,7 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
         }
     case "v":
         m.vertical = !m.vertical
+        _ = storage.SaveConfig(storage.Config{Vertical: m.vertical})
     }
     return m, nil
 }
