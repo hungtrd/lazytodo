@@ -287,6 +287,8 @@ func (m model) View() string {
         base := contentTotal / numCols
         rem := contentTotal - base*numCols
         widths := make([]int, numCols)
+        contents := make([]string, numCols)
+        styles := make([]lipgloss.Style, numCols)
         for i := 0; i < numCols; i++ {
             widths[i] = base
             if i < rem { widths[i]++ }
@@ -295,10 +297,21 @@ func (m model) View() string {
             title := statusTitle(st)
             items := m.renderItems(st)
             header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
-            content := header + "\n" + strings.Join(items, "\n")
+            contents[i] = header + "\n" + strings.Join(items, "\n")
             style := unfocusedColStyle
             if m.focused == st { style = focusedColStyle }
-            sections = append(sections, style.Width(max(1, widths[i])).Render(content))
+            styles[i] = style
+            sections = append(sections, style.Width(max(1, widths[i])).Render(contents[i]))
+        }
+        // Measure and correct any rounding width diff by adjusting the last column
+        gap := lipgloss.NewStyle().Width(gapW).Render(" ")
+        boardCandidate := lipgloss.JoinHorizontal(lipgloss.Top, interleave(sections, gap)...)
+        diff := totalWidth - lipgloss.Width(boardCandidate)
+        if diff != 0 {
+            // expand or shrink last column to fit exactly
+            last := numCols - 1
+            newW := max(1, widths[last]+diff)
+            sections[last] = styles[last].Width(newW).Render(contents[last])
         }
     }
     var board string
