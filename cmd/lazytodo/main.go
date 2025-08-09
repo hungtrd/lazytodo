@@ -309,7 +309,7 @@ func (m model) View() string {
         board = lipgloss.JoinHorizontal(lipgloss.Top, interleave(sections, gap)...)
     }
 
-    help := footerStyle.Render("h/l: focus column  j/k: move  [ \\ / ]: move task  n: new  e: edit  s: star  space/x: toggle done  del: delete  v: toggle layout  q: quit  esc: cancel")
+    help := m.renderHelp(totalWidth)
 
     if m.mode == modeNew {
         prompt := footerStyle.Copy().Bold(true).Render("New Task:")
@@ -437,6 +437,60 @@ func interleave(items []string, sep string) []string {
         out = append(out, s)
     }
     return out
+}
+
+// renderHelp lays out the shortcut hints across multiple columns
+func (m model) renderHelp(totalWidth int) string {
+    items := []string{
+        "h/l: focus column",
+        "j/k: move",
+        "g/G: top/bottom",
+        "[ \\ / ]: move task",
+        "space/x: toggle done",
+        "s: star",
+        "n: new",
+        "e: edit",
+        "del: delete",
+        "v: toggle layout",
+        "q: quit",
+        "esc: cancel",
+    }
+
+    minColWidth := 22
+    gapW := 2
+    maxCols := 3
+    if m.vertical {
+        maxCols = 2
+    }
+    // compute how many columns we can fit
+    cols := totalWidth / (minColWidth + gapW)
+    if cols < 1 { cols = 1 }
+    if cols > maxCols { cols = maxCols }
+
+    rows := (len(items) + cols - 1) / cols
+    columns := make([]string, 0, cols)
+    // width distribution
+    contentTotal := totalWidth - (cols-1)*gapW
+    base := contentTotal / cols
+    rem := contentTotal - base*cols
+    for c := 0; c < cols; c++ {
+        // gather items for this column (column-major)
+        lines := make([]string, 0, rows)
+        for r := 0; r < rows; r++ {
+            idx := r + c*rows
+            if idx < len(items) {
+                lines = append(lines, items[idx])
+            } else {
+                lines = append(lines, "")
+            }
+        }
+        w := base
+        if c < rem { w++ }
+        col := footerStyle.Copy().Width(max(1, w)).Render(strings.Join(lines, "\n"))
+        columns = append(columns, col)
+    }
+    gap := lipgloss.NewStyle().Width(gapW).Render(" ")
+    return lipgloss.JoinHorizontal(lipgloss.Top, interleave(columns, gap)...)
 }
 
 func main() {
