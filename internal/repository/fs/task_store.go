@@ -1,4 +1,4 @@
-package storage
+package fs
 
 import (
 	"encoding/json"
@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 
 	"github.com/hungtrd/lazytodo/internal/domain"
+	"github.com/hungtrd/lazytodo/internal/repository"
 )
 
 const defaultDirName = ".lazytodo"
 const tasksFileName = "tasks.json"
 
-// DefaultDir returns the default directory path, e.g. ~/.lazytodo
-func DefaultDir() (string, error) {
+func defaultDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
@@ -24,7 +24,7 @@ func DefaultDir() (string, error) {
 }
 
 func tasksFilePath() (string, error) {
-	dir, err := DefaultDir()
+	dir, err := defaultDir()
 	if err != nil {
 		return "", err
 	}
@@ -32,16 +32,26 @@ func tasksFilePath() (string, error) {
 }
 
 func ensureDirExists() error {
-	dir, err := DefaultDir()
+	dir, err := defaultDir()
 	if err != nil {
 		return err
 	}
 	return os.MkdirAll(dir, 0o755)
 }
 
-// LoadTasks loads tasks from ~/.lazytodo/tasks.json. If the file
-// does not exist, it returns an initialized empty map.
-func LoadTasks() (map[domain.TaskStatus][]domain.Task, error) {
+type TaskStore struct{}
+
+func NewTaskStore() *TaskStore { return &TaskStore{} }
+
+func emptyTaskMap() map[domain.TaskStatus][]domain.Task {
+	return map[domain.TaskStatus][]domain.Task{
+		domain.TaskStatusTodo:       {},
+		domain.TaskStatusInProgress: {},
+		domain.TaskStatusDone:       {},
+	}
+}
+
+func (s *TaskStore) Load() (map[domain.TaskStatus][]domain.Task, error) {
 	path, err := tasksFilePath()
 	if err != nil {
 		return nil, err
@@ -63,8 +73,7 @@ func LoadTasks() (map[domain.TaskStatus][]domain.Task, error) {
 	return m, nil
 }
 
-// SaveTasks writes tasks to ~/.lazytodo/tasks.json, creating directories as needed.
-func SaveTasks(m map[domain.TaskStatus][]domain.Task) error {
+func (s *TaskStore) Save(m map[domain.TaskStatus][]domain.Task) error {
 	if err := ensureDirExists(); err != nil {
 		return err
 	}
@@ -82,10 +91,4 @@ func SaveTasks(m map[domain.TaskStatus][]domain.Task) error {
 	return nil
 }
 
-func emptyTaskMap() map[domain.TaskStatus][]domain.Task {
-	return map[domain.TaskStatus][]domain.Task{
-		domain.TaskStatusTodo:       {},
-		domain.TaskStatusInProgress: {},
-		domain.TaskStatusDone:       {},
-	}
-}
+var _ repository.TaskRepository = (*TaskStore)(nil)
