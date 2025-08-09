@@ -359,16 +359,32 @@ func (m model) renderItems(status domain.TaskStatus) []string {
     for i, t := range list {
         star := "  "
         if t.IsStarred { star = starredStyle.Render("★ ") }
-        text := t.Content
-        if status == domain.TaskStatusDone { text = doneStyle.Render(text) }
+        baseText := t.Content
         isSelected := indexInOriginal(t) == m.selectedIdx[status] && m.focused == status && m.mode == modeList
+
+        var textStyled string
+        if isSelected {
+            if status == domain.TaskStatusDone {
+                // Explicitly compose reverse + strikethrough to avoid nested ANSI resets
+                textStyled = lipgloss.NewStyle().Reverse(true).Strikethrough(true).Foreground(lipgloss.Color("245")).Render(baseText)
+            } else {
+                textStyled = selectedItemStyle.Render(baseText)
+            }
+        } else {
+            if status == domain.TaskStatusDone {
+                textStyled = doneStyle.Render(baseText)
+            } else {
+                textStyled = baseText
+            }
+        }
+
         var line string
         if isSelected {
             // Keep star color; only reverse the task text
-            line = fmt.Sprintf("%s %s%s", cursorBullet, star, selectedItemStyle.Render(text))
+            line = fmt.Sprintf("%s %s%s", cursorBullet, star, textStyled)
         } else {
             // Keep alignment when not selected (two-space prefix the width of the bullet+space)
-            line = fmt.Sprintf("  %s%s", star, text)
+            line = fmt.Sprintf("  %s%s", star, textStyled)
         }
         lines = append(lines, line)
         _ = i // silence unused variable in case
