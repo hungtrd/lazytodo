@@ -306,18 +306,15 @@ func (m model) renderItems(status domain.TaskStatus) []string {
         if t.IsStarred { star = starredStyle.Render("★ ") }
         text := t.Content
         if status == domain.TaskStatusDone { text = doneStyle.Render(text) }
-        line := fmt.Sprintf(" %s%s", star, text)
-        // highlight if this is the selected item in original order
         isSelected := indexInOriginal(t) == m.selectedIdx[status] && m.focused == status && m.mode == modeList
+        var line string
         if isSelected {
-            // Prepend a bullet to indicate cursor
-            line = cursorBullet + " " + line
-            line = selectedItemStyle.Render(line)
+            // Keep star color; only reverse the task text
+            line = fmt.Sprintf("%s %s%s", cursorBullet, star, selectedItemStyle.Render(text))
         } else {
-            // Keep alignment when not selected
-            line = "  " + line
+            // Keep alignment when not selected (two-space prefix the width of the bullet+space)
+            line = fmt.Sprintf("  %s%s", star, text)
         }
-        // truncate to column width - padding best effort
         lines = append(lines, line)
         _ = i // silence unused variable in case
     }
