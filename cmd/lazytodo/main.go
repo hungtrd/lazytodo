@@ -261,27 +261,51 @@ func (m *model) deleteTask(status domain.TaskStatus, index int) {
 
 func (m model) View() string {
     // Layout
-    usableWidth := max(30, m.width-2)
-    colWidth := usableWidth / 3
-    sections := make([]string, 0, 3)
-    hFrame, _ := columnStyle.GetFrameSize()
-    for _, st := range statusOrder {
-        title := statusTitle(st)
-        items := m.renderItems(st)
-        header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
-        content := header + "\n" + strings.Join(items, "\n")
-        style := unfocusedColStyle
-        if m.focused == st { style = focusedColStyle }
-        width := colWidth
-        if m.vertical { width = usableWidth }
-        contentWidth := max(0, width - hFrame)
-        sections = append(sections, style.Width(contentWidth).Render(content))
+    totalWidth := max(30, m.width)
+    sections := make([]string, 0, len(statusOrder))
+    frameW, _ := columnStyle.GetFrameSize()
+    gapW := 0
+    if !m.vertical { gapW = 1 }
+
+    if m.vertical {
+        // One column per row, full width
+        contentW := max(1, totalWidth - frameW)
+        for _, st := range statusOrder {
+            title := statusTitle(st)
+            items := m.renderItems(st)
+            header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
+            content := header + "\n" + strings.Join(items, "\n")
+            style := unfocusedColStyle
+            if m.focused == st { style = focusedColStyle }
+            sections = append(sections, style.Width(contentW).Render(content))
+        }
+    } else {
+        // Three columns side-by-side; balance widths exactly
+        numCols := len(statusOrder)
+        contentTotal := totalWidth - numCols*frameW - (numCols-1)*gapW
+        if contentTotal < numCols { contentTotal = numCols }
+        base := contentTotal / numCols
+        rem := contentTotal - base*numCols
+        widths := make([]int, numCols)
+        for i := 0; i < numCols; i++ {
+            widths[i] = base
+            if i < rem { widths[i]++ }
+        }
+        for i, st := range statusOrder {
+            title := statusTitle(st)
+            items := m.renderItems(st)
+            header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
+            content := header + "\n" + strings.Join(items, "\n")
+            style := unfocusedColStyle
+            if m.focused == st { style = focusedColStyle }
+            sections = append(sections, style.Width(max(1, widths[i])).Render(content))
+        }
     }
     var board string
     if m.vertical {
         board = lipgloss.JoinVertical(lipgloss.Left, sections...)
     } else {
-        gap := lipgloss.NewStyle().Width(1).Render(" ")
+        gap := lipgloss.NewStyle().Width(gapW).Render(" ")
         board = lipgloss.JoinHorizontal(lipgloss.Top, interleave(sections, gap)...)
     }
 
