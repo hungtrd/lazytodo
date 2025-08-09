@@ -34,10 +34,11 @@ var (
     columnStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 1)
     focusedColStyle  = columnStyle.Copy().BorderForeground(lipgloss.Color("12"))
     unfocusedColStyle = columnStyle.Copy().BorderForeground(lipgloss.Color("240"))
-    selectedItemStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229"))
+    selectedItemStyle = lipgloss.NewStyle().Reverse(true).Bold(true)
     starredStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
     doneStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Strikethrough(true)
     footerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).MarginTop(1)
+    cursorBullet      = "•"
 )
 
 type model struct {
@@ -305,10 +306,16 @@ func (m model) renderItems(status domain.TaskStatus) []string {
         if t.IsStarred { star = starredStyle.Render("★ ") }
         text := t.Content
         if status == domain.TaskStatusDone { text = doneStyle.Render(text) }
-        line := fmt.Sprintf("%s%s", star, text)
+        line := fmt.Sprintf(" %s%s", star, text)
         // highlight if this is the selected item in original order
-        if indexInOriginal(t) == m.selectedIdx[status] && m.focused == status && m.mode == modeList {
+        isSelected := indexInOriginal(t) == m.selectedIdx[status] && m.focused == status && m.mode == modeList
+        if isSelected {
+            // Prepend a bullet to indicate cursor
+            line = cursorBullet + " " + line
             line = selectedItemStyle.Render(line)
+        } else {
+            // Keep alignment when not selected
+            line = "  " + line
         }
         // truncate to column width - padding best effort
         lines = append(lines, line)
