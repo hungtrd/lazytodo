@@ -52,6 +52,9 @@ type model struct {
     mode       uiMode
     input      textinput.Model
     editingRef *taskRef
+
+    // layout orientation: false = horizontal (default), true = vertical
+    vertical bool
 }
 
 type taskRef struct {
@@ -88,6 +91,7 @@ func initialModel() model {
         focused: domain.TaskStatusTodo,
         mode:    modeList,
         input:   ti,
+        vertical: false,
     }
 }
 
@@ -136,9 +140,9 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
         m.focused = prevStatus(m.focused)
     case "right", "l":
         m.focused = nextStatus(m.focused)
-    case "[":
+    case "[", "\\":
         m = m.moveTask(col, cur, prevStatus(col))
-    case "]":
+    case "]", "/":
         m = m.moveTask(col, cur, nextStatus(col))
     case " ", "x":
         // toggle done: if not done -> move to done; if done -> move to todo
@@ -178,6 +182,8 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
             order := m.sortedOrder(col)
             m.selectedIdx[col] = order[len(order)-1]
         }
+    case "v":
+        m.vertical = !m.vertical
     }
     return m, nil
 }
@@ -265,11 +271,18 @@ func (m model) View() string {
         content := header + "\n" + strings.Join(items, "\n")
         style := unfocusedColStyle
         if m.focused == st { style = focusedColStyle }
-        sections = append(sections, style.Width(colWidth).Render(content))
+        width := colWidth
+        if m.vertical { width = usableWidth }
+        sections = append(sections, style.Width(width).Render(content))
     }
-    board := lipgloss.JoinHorizontal(lipgloss.Top, sections...)
+    var board string
+    if m.vertical {
+        board = lipgloss.JoinVertical(lipgloss.Left, sections...)
+    } else {
+        board = lipgloss.JoinHorizontal(lipgloss.Top, sections...)
+    }
 
-    help := footerStyle.Render("h/l: focus column  j/k: move  [ / ]: move task  n: new  e: edit  s: star  space/x: toggle done  del: delete  q: quit  esc: cancel")
+    help := footerStyle.Render("h/l: focus column  j/k: move  [ \\ / ]: move task  n: new  e: edit  s: star  space/x: toggle done  del: delete  v: toggle layout  q: quit  esc: cancel")
 
     if m.mode == modeNew {
         prompt := footerStyle.Copy().Bold(true).Render("New Task:")
