@@ -35,6 +35,8 @@ var (
     focusedColStyle  = columnStyle.Copy().BorderForeground(lipgloss.Color("12"))
     unfocusedColStyle = columnStyle.Copy().BorderForeground(lipgloss.Color("240"))
     selectedItemStyle = lipgloss.NewStyle().Reverse(true).Bold(true)
+    selectedLineBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("236"))
+    selectedTextStyle   = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229")).Bold(true)
     starredStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
     doneStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Strikethrough(true)
     footerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).MarginTop(1)
@@ -378,15 +380,22 @@ func (m model) renderItems(status domain.TaskStatus) []string {
             }
         }
 
-        var line string
+        // Build line segments so we can apply a full-line background even when text has leading spaces.
+        // Left gutter for alignment/bullet
+        var left string
         if isSelected {
-            // Keep star color; only reverse the task text
-            line = fmt.Sprintf("%s %s%s", cursorBullet, star, textStyled)
+            left = cursorBullet + " "
         } else {
-            // Keep alignment when not selected (two-space prefix the width of the bullet+space)
-            line = fmt.Sprintf("  %s%s", star, textStyled)
+            left = "  "
         }
-        lines = append(lines, line)
+        // Compose raw line (without selection background) so we can then apply a line background
+        raw := left + star + textStyled
+        if isSelected {
+            // Apply background over the entire line, then re-apply star color (already colored) and styled text
+            // to ensure spaces are also visually highlighted.
+            raw = selectedLineBgStyle.Render(raw)
+        }
+        lines = append(lines, raw)
         _ = i // silence unused variable in case
     }
     return lines
