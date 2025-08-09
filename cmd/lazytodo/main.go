@@ -12,6 +12,7 @@ import (
     "github.com/charmbracelet/lipgloss"
 
     "github.com/hungtrd/lazytodo/internal/domain"
+    "github.com/hungtrd/lazytodo/internal/storage"
 )
 
 type uiMode int
@@ -58,19 +59,17 @@ type taskRef struct {
 }
 
 func initialTasks() map[domain.TaskStatus][]domain.Task {
-    now := time.Now().Unix()
-    return map[domain.TaskStatus][]domain.Task{
-        domain.TaskStatusTodo: {
-            {Id: newID(), Content: "Set up project", Status: domain.TaskStatusTodo, CreatedAt: now},
-            {Id: newID(), Content: "Write first task", Status: domain.TaskStatusTodo, CreatedAt: now, IsStarred: true},
-        },
-        domain.TaskStatusInProgress: {
-            {Id: newID(), Content: "Implement TUI", Status: domain.TaskStatusInProgress, CreatedAt: now},
-        },
-        domain.TaskStatusDone: {
-            {Id: newID(), Content: "Scaffold domain model", Status: domain.TaskStatusDone, CreatedAt: now},
-        },
+    // load from storage; if empty, start with an empty board
+    m, err := storage.LoadTasks()
+    if err != nil {
+        // fallback to empty board on load error
+        m = map[domain.TaskStatus][]domain.Task{
+            domain.TaskStatusTodo:       {},
+            domain.TaskStatusInProgress: {},
+            domain.TaskStatusDone:       {},
+        }
     }
+    return m
 }
 
 func initialModel() model {
@@ -142,6 +141,7 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
         it := items[cur]
         it.IsStarred = !it.IsStarred
         m.tasksByStatus[col][cur] = it
+        _ = storage.SaveTasks(m.tasksByStatus)
     case "n":
         m.mode = modeNew
         m.input.SetValue("")
@@ -158,6 +158,7 @@ func (m model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
     case "backspace", "delete":
         if len(items) == 0 { return m, nil }
         m.deleteTask(col, cur)
+        _ = storage.SaveTasks(m.tasksByStatus)
     case "g":
         m.selectedIdx[col] = 0
     case "G":
@@ -185,6 +186,7 @@ func (m model) updateInputMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
                 t.UpdatedAt = time.Now().Unix()
                 m.tasksByStatus[ref.status][ref.index] = t
                 m.editingRef = nil
+                _ = storage.SaveTasks(m.tasksByStatus)
             }
         }
         m.mode = modeList
@@ -202,6 +204,7 @@ func (m *model) addTask(content string) {
     m.tasksByStatus[domain.TaskStatusTodo] = append([]domain.Task{t}, m.tasksByStatus[domain.TaskStatusTodo]...)
     m.focused = domain.TaskStatusTodo
     m.selectedIdx[domain.TaskStatusTodo] = 0
+    _ = storage.SaveTasks(m.tasksByStatus)
 }
 
 func (m model) moveTask(from domain.TaskStatus, index int, to domain.TaskStatus) model {
@@ -221,6 +224,7 @@ func (m model) moveTask(from domain.TaskStatus, index int, to domain.TaskStatus)
     }
     m.focused = to
     m.selectedIdx[to] = 0
+    _ = storage.SaveTasks(m.tasksByStatus)
     return m
 }
 
@@ -231,6 +235,7 @@ func (m *model) deleteTask(status domain.TaskStatus, index int) {
     if index >= len(m.tasksByStatus[status]) {
         m.selectedIdx[status] = max(0, len(m.tasksByStatus[status])-1)
     }
+    _ = storage.SaveTasks(m.tasksByStatus)
 }
 
 func (m model) View() string {
