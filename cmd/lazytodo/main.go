@@ -366,12 +366,11 @@ func (m model) renderItems(status domain.TaskStatus) []string {
 
         var textStyled string
         if isSelected {
+            style := selectedTextStyle
             if status == domain.TaskStatusDone {
-                // Explicitly compose reverse + strikethrough to avoid nested ANSI resets
-                textStyled = lipgloss.NewStyle().Reverse(true).Strikethrough(true).Foreground(lipgloss.Color("245")).Render(baseText)
-            } else {
-                textStyled = selectedItemStyle.Render(baseText)
+                style = style.Copy().Strikethrough(true)
             }
+            textStyled = style.Render(baseText)
         } else {
             if status == domain.TaskStatusDone {
                 textStyled = doneStyle.Render(baseText)
@@ -388,14 +387,8 @@ func (m model) renderItems(status domain.TaskStatus) []string {
         } else {
             left = "  "
         }
-        // Compose raw line (without selection background) so we can then apply a line background
-        raw := left + star + textStyled
-        if isSelected {
-            // Apply background over the entire line, then re-apply star color (already colored) and styled text
-            // to ensure spaces are also visually highlighted.
-            raw = selectedLineBgStyle.Render(raw)
-        }
-        lines = append(lines, raw)
+        line := left + star + textStyled
+        lines = append(lines, line)
         _ = i // silence unused variable in case
     }
     return lines
