@@ -1,20 +1,22 @@
 package main
 
 import (
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 
-    "github.com/hungtrd/lazytodo/internal/repository/fs"
-    "github.com/hungtrd/lazytodo/internal/task"
-    "github.com/hungtrd/lazytodo/internal/ui"
+	"github.com/hungtrd/lazytodo/internal/cli"
+	"github.com/hungtrd/lazytodo/internal/ui"
 )
 
 func main() {
-    taskRepo := fs.NewTaskStore()
-    cfgRepo := fs.NewConfigStore()
-    svc := task.NewService(taskRepo, cfgRepo)
-    if err := ui.Run(svc); err != nil {
-        fmt.Fprintf(os.Stderr, "error: %v\n", err)
-        os.Exit(1)
-    }
+	root := cli.NewRootCommand(cli.Dependencies{
+		RunUI: ui.Run,
+		In:    os.Stdin,
+		Out:   os.Stdout,
+		Err:   os.Stderr,
+	})
+	if err := root.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 }

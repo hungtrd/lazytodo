@@ -2,9 +2,16 @@ package repository
 
 import "github.com/hungtrd/lazytodo/internal/domain"
 
+const CurrentTaskDataVersion = 2
+
+type TaskData struct {
+	Version int                                 `json:"version"`
+	NextID  int64                               `json:"next_id"`
+	Tasks   map[domain.TaskStatus][]domain.Task `json:"tasks"`
+}
+
 // TaskRepository abstracts persistence for tasks grouped by status.
-// Implementations should be concurrency-safe if used across goroutines.
 type TaskRepository interface {
-	Load() (map[domain.TaskStatus][]domain.Task, error)
-	Save(map[domain.TaskStatus][]domain.Task) error
+	Load() (TaskData, error)
+	Save(TaskData) error
 }

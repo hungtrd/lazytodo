@@ -6,27 +6,16 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/hungtrd/lazytodo/internal/repository"
 )
-
-const configFileName = "config.json"
 
 type ConfigStore struct{}
 
 func NewConfigStore() *ConfigStore { return &ConfigStore{} }
 
-func configFilePath() (string, error) {
-	dir, err := defaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, configFileName), nil
-}
-
 func (s *ConfigStore) Load() (repository.Config, error) {
-	path, err := configFilePath()
+	path, err := ConfigFilePath()
 	if err != nil {
 		return repository.Config{}, err
 	}
@@ -45,10 +34,7 @@ func (s *ConfigStore) Load() (repository.Config, error) {
 }
 
 func (s *ConfigStore) Save(cfg repository.Config) error {
-	if err := ensureDirExists(); err != nil {
-		return err
-	}
-	path, err := configFilePath()
+	path, err := ConfigFilePath()
 	if err != nil {
 		return err
 	}
@@ -56,7 +42,7 @@ func (s *ConfigStore) Save(cfg repository.Config) error {
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+	if err := atomicWriteFile(path, b, 0o644); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
