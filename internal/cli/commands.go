@@ -79,7 +79,7 @@ func (a *app) newEditCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&content, "content", "", "replace task content")
-	cmd.Flags().StringVar(&statusValue, "status", "", "set task status")
+	cmd.Flags().StringVarP(&statusValue, "status", "s", "", "set task status")
 	cmd.Flags().BoolVar(&starred, "star", false, "mark the task as starred")
 	cmd.Flags().BoolVar(&unstarred, "unstar", false, "remove the starred mark")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")

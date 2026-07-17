@@ -54,7 +54,7 @@ func TestCLIWorkflowAndJSONOutput(t *testing.T) {
 		t.Fatalf("unexpected list output: %s", listed)
 	}
 
-	executeCLI(t, cfg, "edit", "1", "--status", "done", "--content", "Buy oat milk")
+	executeCLI(t, cfg, "edit", "1", "-s", "done", "--content", "Buy oat milk")
 	searched := executeCLI(t, cfg, "search", "OAT", "--json")
 	if !strings.Contains(searched, `"status": "done"`) {
 		t.Fatalf("unexpected search output: %s", searched)

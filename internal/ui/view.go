@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -13,7 +12,7 @@ func (m Model) View() string {
 	// Layout
 	totalWidth := max(30, m.width)
 	sections := make([]string, 0, len(statusOrder))
-	frameW, _ := columnStyle.GetFrameSize()
+	frameW, _ := m.styles.column.GetFrameSize()
 	gapW := 0
 	if !m.vertical {
 		gapW = 1
@@ -24,11 +23,11 @@ func (m Model) View() string {
 		for _, st := range statusOrder {
 			title := statusTitle(st)
 			items := m.renderItems(st)
-			header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
+			header := m.styles.renderHeader(st, title, len(m.tasksByStatus[st]))
 			content := header + "\n" + strings.Join(items, "\n")
-			style := unfocusedColStyle
+			style := m.styles.unfocusedColumn
 			if m.focused == st {
-				style = focusedColStyle
+				style = m.styles.focusedColumn
 			}
 			sections = append(sections, style.Width(contentW).Render(content))
 		}
@@ -52,16 +51,16 @@ func (m Model) View() string {
 		for i, st := range statusOrder {
 			title := statusTitle(st)
 			items := m.renderItems(st)
-			header := headerStyle.Render(fmt.Sprintf("%s (%d)", title, len(m.tasksByStatus[st])))
+			header := m.styles.renderHeader(st, title, len(m.tasksByStatus[st]))
 			contents[i] = header + "\n" + strings.Join(items, "\n")
-			style := unfocusedColStyle
+			style := m.styles.unfocusedColumn
 			if m.focused == st {
-				style = focusedColStyle
+				style = m.styles.focusedColumn
 			}
 			styles[i] = style
 			sections = append(sections, style.Width(max(1, widths[i])).Render(contents[i]))
 		}
-		gap := lipgloss.NewStyle().Width(gapW).Render(" ")
+		gap := m.styles.gap(gapW)
 		boardCandidate := lipgloss.JoinHorizontal(lipgloss.Top, interleave(sections, gap)...)
 		diff := totalWidth - lipgloss.Width(boardCandidate)
 		if diff != 0 {
@@ -74,18 +73,18 @@ func (m Model) View() string {
 	if m.vertical {
 		board = lipgloss.JoinVertical(lipgloss.Left, sections...)
 	} else {
-		gap := lipgloss.NewStyle().Width(gapW).Render(" ")
+		gap := m.styles.gap(gapW)
 		board = lipgloss.JoinHorizontal(lipgloss.Top, interleave(sections, gap)...)
 	}
 
 	help := m.renderHelp(totalWidth)
 
 	if m.mode == modeNew {
-		prompt := footerStyle.Copy().Bold(true).Render("New Task:")
+		prompt := m.styles.footer.Copy().Bold(true).Render("New Task:")
 		return board + "\n" + prompt + "\n" + m.input.View() + "\n" + help
 	}
 	if m.mode == modeEdit {
-		prompt := footerStyle.Copy().Bold(true).Render("Edit Task:")
+		prompt := m.styles.footer.Copy().Bold(true).Render("Edit Task:")
 		return board + "\n" + prompt + "\n" + m.input.View() + "\n" + help
 	}
 	return board + "\n" + help
@@ -109,25 +108,12 @@ func (m Model) renderItems(status domain.TaskStatus) []string {
 		t := list[ordIdx]
 		star := "  "
 		if t.IsStarred {
-			star = starredStyle.Render("★ ")
+			star = m.styles.theme.Star().Render("★ ")
 		}
 		baseText := t.Content
 		isSelected := indexInOriginal(t) == m.selectedIdx[status] && m.focused == status && m.mode == modeList
 
-		var textStyled string
-		if isSelected {
-			style := selectedTextStyle
-			if status == domain.TaskStatusDone {
-				style = style.Copy().Strikethrough(true)
-			}
-			textStyled = style.Render(baseText)
-		} else {
-			if status == domain.TaskStatusDone {
-				textStyled = doneStyle.Render(baseText)
-			} else {
-				textStyled = baseText
-			}
-		}
+		textStyled := m.styles.taskStyle(status, isSelected).Render(baseText)
 
 		var left string
 		if isSelected {
@@ -191,9 +177,9 @@ func (m Model) renderHelp(totalWidth int) string {
 		if c < rem {
 			w++
 		}
-		col := footerStyle.Width(max(1, w)).Render(strings.Join(lines, "\n"))
+		col := m.styles.footer.Width(max(1, w)).Render(strings.Join(lines, "\n"))
 		columns = append(columns, col)
 	}
-	gap := lipgloss.NewStyle().Width(gapW).Render(" ")
+	gap := m.styles.gap(gapW)
 	return lipgloss.JoinHorizontal(lipgloss.Top, interleave(columns, gap)...)
 }

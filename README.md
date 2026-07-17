@@ -101,8 +101,9 @@ lazytodo config reset storage-root
 
 ## Notes
 
-- The UI uses Bubble Tea + Lip Gloss. Terminal TrueColor support is recommended for best visuals.
+- The UI uses Bubble Tea + Lip Gloss and adapts to the terminal's detected color profile.
 - Starred tasks render with a star (★) and are sorted to the top.
+- Status and star colors use the terminal's ANSI palette: Doing is blue, Done is green, and stars are yellow. Color is disabled for non-TTY output and when `NO_COLOR` is set; `CLICOLOR_FORCE=1` forces ANSI output for CLI text commands.
 
 ## License
 

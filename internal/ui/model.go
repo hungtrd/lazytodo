@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/hungtrd/lazytodo/internal/domain"
 	"github.com/hungtrd/lazytodo/internal/task"
 )
@@ -35,9 +36,14 @@ type Model struct {
 	editingRef *taskRef
 
 	vertical bool
+	styles   uiStyles
 }
 
 func InitialModel(svc *task.Service) Model {
+	return initialModel(svc, lipgloss.DefaultRenderer())
+}
+
+func initialModel(svc *task.Service, renderer *lipgloss.Renderer) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Task content..."
 	ti.Prompt = "➤ "
@@ -54,6 +60,7 @@ func InitialModel(svc *task.Service) Model {
 		focused: domain.TaskStatusTodo,
 		mode:    modeList,
 		input:   ti,
+		styles:  newUIStyles(renderer),
 	}
 	// load data
 	if tasks, err := svc.Load(); err == nil {

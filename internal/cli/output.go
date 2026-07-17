@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"text/tabwriter"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/hungtrd/lazytodo/internal/domain"
 	"github.com/hungtrd/lazytodo/internal/repository"
 	repofs "github.com/hungtrd/lazytodo/internal/repository/fs"
+	"github.com/hungtrd/lazytodo/internal/terminalstyle"
 )
 
 type taskJSON struct {
@@ -22,6 +24,12 @@ type taskJSON struct {
 	UpdatedAt int64  `json:"updated_at,omitempty"`
 }
 
+type taskTableRow struct {
+	cells   [5]string
+	status  domain.TaskStatus
+	starred bool
+}
+
 func writeTasks(w io.Writer, tasks []domain.Task, asJSON bool) error {
 	if asJSON {
 		items := make([]taskJSON, len(tasks))
@@ -30,8 +38,12 @@ func writeTasks(w io.Writer, tasks []domain.Task, asJSON bool) error {
 		}
 		return writeJSON(w, items)
 	}
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSTATUS\tSTAR\tCONTENT\tUPDATED")
+	return writeTaskTable(w, tasks, terminalstyle.New(w))
+}
+
+func writeTaskTable(w io.Writer, tasks []domain.Task, theme terminalstyle.Theme) error {
+	rows := make([]taskTableRow, 0, len(tasks)+1)
+	rows = append(rows, taskTableRow{cells: [5]string{"ID", "STATUS", "STAR", "CONTENT", "UPDATED"}})
 	for _, item := range tasks {
 		star := ""
 		if item.IsStarred {
@@ -41,9 +53,47 @@ func writeTasks(w io.Writer, tasks []domain.Task, asJSON bool) error {
 		if updated == 0 {
 			updated = item.CreatedAt
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", item.Id, item.Status, star, item.Content, formatTime(updated))
+		rows = append(rows, taskTableRow{
+			cells:   [5]string{item.Id, item.Status.String(), star, item.Content, formatTime(updated)},
+			status:  item.Status,
+			starred: item.IsStarred,
+		})
 	}
-	return tw.Flush()
+
+	widths := [5]int{}
+	for _, row := range rows {
+		for column, cell := range row.cells {
+			widths[column] = max(widths[column], lipgloss.Width(cell))
+		}
+	}
+	for rowIndex, row := range rows {
+		for column, cell := range row.cells {
+			rendered := cell
+			if rowIndex > 0 {
+				switch column {
+				case 1:
+					rendered = theme.Status(row.status).Render(cell)
+				case 2:
+					if row.starred {
+						rendered = theme.Star().Render(cell)
+					}
+				}
+			}
+			if _, err := fmt.Fprint(w, rendered); err != nil {
+				return err
+			}
+			if column < len(row.cells)-1 {
+				padding := widths[column] - lipgloss.Width(cell) + 2
+				if _, err := fmt.Fprint(w, strings.Repeat(" ", padding)); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeTask(w io.Writer, item domain.Task, asJSON bool) error {
@@ -57,9 +107,15 @@ func writeTaskDetail(w io.Writer, item domain.Task, asJSON bool) error {
 	if asJSON {
 		return writeJSON(w, toTaskJSON(item))
 	}
+	theme := terminalstyle.New(w)
+	status := theme.Status(item.Status).Render(item.Status.String())
+	starred := fmt.Sprintf("%t", item.IsStarred)
+	if item.IsStarred {
+		starred = theme.Star().Render(starred)
+	}
 	fmt.Fprintf(w, "ID:      %s\n", item.Id)
-	fmt.Fprintf(w, "Status:  %s\n", item.Status)
-	fmt.Fprintf(w, "Starred: %t\n", item.IsStarred)
+	fmt.Fprintf(w, "Status:  %s\n", status)
+	fmt.Fprintf(w, "Starred: %s\n", starred)
 	fmt.Fprintf(w, "Content: %s\n", item.Content)
 	fmt.Fprintf(w, "Created: %s\n", formatTime(item.CreatedAt))
 	fmt.Fprintf(w, "Updated: %s\n", formatTime(item.UpdatedAt))
