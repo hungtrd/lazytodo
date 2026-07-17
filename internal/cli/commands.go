@@ -35,7 +35,7 @@ func (a *app) newCreateCommand() *cobra.Command {
 			return writeTask(cmd.OutOrStdout(), created, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&statusValue, "status", "todo", "task status: todo, in-progress, or done")
+	cmd.Flags().StringVar(&statusValue, "status", "todo", "task status: todo, doing, or done")
 	cmd.Flags().BoolVar(&starred, "star", false, "mark the task as starred")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
 	return cmd

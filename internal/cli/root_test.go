@@ -76,6 +76,16 @@ func TestRootShowsHelpAndRejectsUIWithCommand(t *testing.T) {
 	if !strings.Contains(output, "Usage:") {
 		t.Fatalf("root did not show help: %s", output)
 	}
+	for _, description := range []string{
+		"create (add, new)",
+		"delete (del, rm)",
+		"list (ls)",
+		"show (detail)",
+	} {
+		if !strings.Contains(output, description) {
+			t.Fatalf("root help is missing %q: %s", description, output)
+		}
+	}
 
 	root := NewRootCommand(Dependencies{ConfigRepo: cfg})
 	root.SetArgs([]string{"list", "--ui"})

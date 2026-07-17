@@ -33,7 +33,7 @@ func TestServiceCRUDUsesMonotonicIDs(t *testing.T) {
 		Version: repository.CurrentTaskDataVersion,
 		NextID:  1,
 		Tasks: map[domain.TaskStatus][]domain.Task{
-			domain.TaskStatusTodo: {}, domain.TaskStatusInProgress: {}, domain.TaskStatusDone: {},
+			domain.TaskStatusTodo: {}, domain.TaskStatusDoing: {}, domain.TaskStatusDone: {},
 		},
 	}}
 	svc := NewService(repo, &memoryConfigRepo{})
@@ -42,7 +42,7 @@ func TestServiceCRUDUsesMonotonicIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := svc.Create("Fix bug", domain.TaskStatusInProgress, true)
+	second, err := svc.Create("Fix bug", domain.TaskStatusDoing, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hungtrd/lazytodo/internal/domain"
@@ -12,18 +13,10 @@ import (
 
 func TestTaskStoreMigratesLegacyDataToSequentialIDs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tasks.json")
-	legacy := map[domain.TaskStatus][]legacyTask{
-		domain.TaskStatusTodo: {
-			{Id: "1740000000000000000", Content: "first", Status: domain.TaskStatusTodo, IsStarred: true, CreatedAt: 100},
-		},
-		domain.TaskStatusDone: {
-			{Id: "1740000000000000001", Content: "second", Status: domain.TaskStatusDone},
-		},
-	}
-	data, err := json.Marshal(legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := []byte(`{
+		"0": [{"Id":"1740000000000000000","Content":"first","Status":0,"IsStarred":true,"CreatedAt":100}],
+		"2": [{"Id":"1740000000000000001","Content":"second","Status":2}]
+	}`)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +51,43 @@ func TestTaskStoreMigratesLegacyDataToSequentialIDs(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".v1.bak"); err != nil {
 		t.Fatalf("legacy backup was not created: %v", err)
+	}
+}
+
+func TestTaskStoreMigratesVersion2StatusesToDoing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	version2 := []byte(`{
+		"version": 2,
+		"next_id": 8,
+		"tasks": {
+			"0": [],
+			"1": [{"id":"7","content":"active task","status":1,"created_at":100}],
+			"2": []
+		}
+	}`)
+	if err := os.WriteFile(path, version2, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := NewTaskStoreAt(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Version != repository.CurrentTaskDataVersion {
+		t.Fatalf("version = %d, want %d", loaded.Version, repository.CurrentTaskDataVersion)
+	}
+	if tasks := loaded.Tasks[domain.TaskStatusDoing]; len(tasks) != 1 || tasks[0].Status != domain.TaskStatusDoing {
+		t.Fatalf("doing tasks were not migrated: %+v", tasks)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(persisted), `"doing"`) {
+		t.Fatalf("persisted data does not use doing status: %s", persisted)
+	}
+	if _, err := os.Stat(path + ".v2.bak"); err != nil {
+		t.Fatalf("version 2 backup was not created: %v", err)
 	}
 }
 

@@ -2,7 +2,7 @@ package repository
 
 import "github.com/hungtrd/lazytodo/internal/domain"
 
-const CurrentTaskDataVersion = 2
+const CurrentTaskDataVersion = 3
 
 type TaskData struct {
 	Version int                                 `json:"version"`

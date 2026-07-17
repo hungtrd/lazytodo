@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/hungtrd/lazytodo/internal/repository"
 	repofs "github.com/hungtrd/lazytodo/internal/repository/fs"
@@ -77,7 +79,37 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 		app.newSearchCommand(),
 		app.newConfigCommand(),
 	)
+	configureUsageTemplate(root)
 	return root
+}
+
+func configureUsageTemplate(root *cobra.Command) {
+	cobra.AddTemplateFunc("lazytodoCommandLabel", commandLabel)
+	cobra.AddTemplateFunc("lazytodoCommandLabelPadding", commandLabelPadding)
+
+	const defaultCommandRow = "{{rpad .Name .NamePadding }} {{.Short}}"
+	const commandRowWithAliases = "{{rpad (lazytodoCommandLabel .) (lazytodoCommandLabelPadding $cmds) }} {{.Short}}"
+	root.SetUsageTemplate(strings.ReplaceAll(root.UsageTemplate(), defaultCommandRow, commandRowWithAliases))
+}
+
+func commandLabel(cmd *cobra.Command) string {
+	if len(cmd.Aliases) == 0 {
+		return cmd.Name()
+	}
+	return fmt.Sprintf("%s (%s)", cmd.Name(), strings.Join(cmd.Aliases, ", "))
+}
+
+func commandLabelPadding(commands []*cobra.Command) int {
+	padding := 0
+	for _, cmd := range commands {
+		if !cmd.IsAvailableCommand() && cmd.Name() != "help" {
+			continue
+		}
+		if width := utf8.RuneCountInString(commandLabel(cmd)); width > padding {
+			padding = width
+		}
+	}
+	return padding
 }
 
 func (a *app) taskService() (*task.Service, error) {

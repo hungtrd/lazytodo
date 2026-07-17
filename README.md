@@ -1,12 +1,12 @@
 # lazytodo
 
-A todo manager with a scriptable Cobra CLI and an optional Bubble Tea TUI. Tasks are organized into Todo, In Progress, and Done statuses.
+A todo manager with a scriptable Cobra CLI and an optional Bubble Tea TUI. Tasks are organized into Todo, Doing, and Done statuses.
 
 ## Features
 
 - Create, edit, delete, list, inspect, and search tasks from the CLI
 - JSON output for scripts and integrations
-- Optional kanban TUI with Todo, In Progress, and Done
+- Optional kanban TUI with Todo, Doing, and Done
 - Smooth navigation and editing with vim-like keybindings
 - Star tasks; starred items appear first
 - Add, edit, delete tasks inline
@@ -43,7 +43,7 @@ go run ./cmd/lazytodo
 
 # Manage tasks
 lazytodo create "Buy milk"
-lazytodo create "Fix login" --status in-progress --star
+lazytodo create "Fix login" --status doing --star
 lazytodo edit 1 --content "Buy oat milk" --status done
 lazytodo list --status todo
 lazytodo show 1
@@ -96,7 +96,7 @@ lazytodo config set storage-root /mnt/data
 lazytodo config reset storage-root
 ```
 
-- Legacy task files are migrated automatically to the versioned schema with sequential IDs. The original file is retained as `tasks.json.v1.bak`.
+- Task files are migrated automatically to schema version 3 with `todo`, `doing`, and `done` status values. Pre-versioned and version 2 files are retained as `.v1.bak` or `.v2.bak` backups.
 - Layout choice is remembered between runs (`vertical` setting in config).
 
 ## Notes

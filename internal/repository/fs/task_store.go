@@ -30,9 +30,9 @@ func NewTaskStoreAt(path string) *TaskStore { return &TaskStore{path: path} }
 
 func emptyTaskMap() map[domain.TaskStatus][]domain.Task {
 	return map[domain.TaskStatus][]domain.Task{
-		domain.TaskStatusTodo:       {},
-		domain.TaskStatusInProgress: {},
-		domain.TaskStatusDone:       {},
+		domain.TaskStatusTodo:  {},
+		domain.TaskStatusDoing: {},
+		domain.TaskStatusDone:  {},
 	}
 }
 
@@ -55,6 +55,16 @@ func (s *TaskStore) Load() (repository.TaskData, error) {
 
 	var envelope repository.TaskData
 	if err := json.Unmarshal(data, &envelope); err == nil && envelope.Version > 0 {
+		if envelope.Version == 2 {
+			normalizeTaskData(&envelope)
+			if err := s.backupDataFile(data, 2); err != nil {
+				return repository.TaskData{}, fmt.Errorf("back up version 2 tasks: %w", err)
+			}
+			if err := s.Save(envelope); err != nil {
+				return repository.TaskData{}, fmt.Errorf("persist version 3 migration: %w", err)
+			}
+			return envelope, nil
+		}
 		if envelope.Version != repository.CurrentTaskDataVersion {
 			return repository.TaskData{}, fmt.Errorf("unsupported tasks data version %d", envelope.Version)
 		}
@@ -67,7 +77,7 @@ func (s *TaskStore) Load() (repository.TaskData, error) {
 		return repository.TaskData{}, fmt.Errorf("decode tasks: %w", err)
 	}
 	migrated := migrateLegacyTasks(legacy)
-	if err := s.backupLegacyFile(data); err != nil {
+	if err := s.backupDataFile(data, 1); err != nil {
 		return repository.TaskData{}, fmt.Errorf("back up legacy tasks: %w", err)
 	}
 	if err := s.Save(migrated); err != nil {
@@ -76,8 +86,8 @@ func (s *TaskStore) Load() (repository.TaskData, error) {
 	return migrated, nil
 }
 
-func (s *TaskStore) backupLegacyFile(data []byte) error {
-	backupPath := s.path + ".v1.bak"
+func (s *TaskStore) backupDataFile(data []byte, version int) error {
+	backupPath := fmt.Sprintf("%s.v%d.bak", s.path, version)
 	if _, err := os.Stat(backupPath); err == nil {
 		return nil
 	} else if !errors.Is(err, iofs.ErrNotExist) {
@@ -101,7 +111,7 @@ func (s *TaskStore) Save(data repository.TaskData) error {
 func migrateLegacyTasks(legacy map[domain.TaskStatus][]legacyTask) repository.TaskData {
 	data := emptyTaskData()
 	var next int64 = 1
-	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusInProgress, domain.TaskStatusDone} {
+	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusDoing, domain.TaskStatusDone} {
 		for _, existing := range legacy[status] {
 			migrated := domain.Task{
 				Id:        strconv.FormatInt(next, 10),
@@ -126,7 +136,7 @@ func normalizeTaskData(data *repository.TaskData) {
 		data.Tasks = emptyTaskMap()
 	}
 	var maxID int64
-	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusInProgress, domain.TaskStatusDone} {
+	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusDoing, domain.TaskStatusDone} {
 		if data.Tasks[status] == nil {
 			data.Tasks[status] = []domain.Task{}
 		}

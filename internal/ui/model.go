@@ -47,9 +47,9 @@ func InitialModel(svc *task.Service) Model {
 		svc:           svc,
 		tasksByStatus: map[domain.TaskStatus][]domain.Task{},
 		selectedIdx: map[domain.TaskStatus]int{
-			domain.TaskStatusTodo:       0,
-			domain.TaskStatusInProgress: 0,
-			domain.TaskStatusDone:       0,
+			domain.TaskStatusTodo:  0,
+			domain.TaskStatusDoing: 0,
+			domain.TaskStatusDone:  0,
 		},
 		focused: domain.TaskStatusTodo,
 		mode:    modeList,

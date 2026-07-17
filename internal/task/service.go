@@ -112,7 +112,7 @@ func (s *Service) List(status *domain.TaskStatus) ([]domain.Task, error) {
 	if err := s.ensureLoaded(); err != nil {
 		return nil, err
 	}
-	statuses := []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusInProgress, domain.TaskStatusDone}
+	statuses := []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusDoing, domain.TaskStatusDone}
 	if status != nil {
 		if !validStatus(*status) {
 			return nil, errors.New("invalid task status")
@@ -238,7 +238,7 @@ func (s *Service) persist(data repository.TaskData) error {
 }
 
 func findTask(tasks map[domain.TaskStatus][]domain.Task, taskID string) (domain.TaskStatus, int) {
-	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusInProgress, domain.TaskStatusDone} {
+	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusDoing, domain.TaskStatusDone} {
 		for i := range tasks[status] {
 			if tasks[status][i].Id == taskID {
 				return status, i
@@ -261,7 +261,7 @@ func copyTaskMap(tasks map[domain.TaskStatus][]domain.Task) map[domain.TaskStatu
 	for key, value := range tasks {
 		out[key] = append([]domain.Task(nil), value...)
 	}
-	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusInProgress, domain.TaskStatusDone} {
+	for _, status := range []domain.TaskStatus{domain.TaskStatusTodo, domain.TaskStatusDoing, domain.TaskStatusDone} {
 		if out[status] == nil {
 			out[status] = []domain.Task{}
 		}
