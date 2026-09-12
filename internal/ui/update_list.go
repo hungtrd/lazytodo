@@ -98,8 +98,9 @@ func (m Model) updateListMode(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		it := items[cur]
-		_ = m.svc.Delete(it.Id)
-		m.deleteTask(col, cur)
+		if _, err := m.svc.Archive(it.Id); err == nil {
+			m.removeFromColumn(col, cur)
+		}
 	case "g":
 		if len(items) > 0 {
 			order := task.SortedOrder(items)

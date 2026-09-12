@@ -35,7 +35,7 @@ func (a *app) newCreateCommand() *cobra.Command {
 			return writeTask(cmd.OutOrStdout(), created, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&statusValue, "status", "todo", "task status: todo, doing, or done")
+	cmd.Flags().StringVar(&statusValue, "status", "todo", "task status: todo, doing, done, or archived")
 	cmd.Flags().BoolVar(&starred, "star", false, "mark the task as starred")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
 	return cmd
@@ -46,17 +46,28 @@ func (a *app) newEditCommand() *cobra.Command {
 	var starred, unstarred, jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "edit <id>",
-		Short: "Edit a task",
+		Short: "Edit a task; opens an interactive form when no field flags are given",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if starred && unstarred {
 				return fmt.Errorf("--star and --unstar cannot be used together")
 			}
+			svc, err := a.taskService()
+			if err != nil {
+				return err
+			}
+
+			flags := cmd.Flags()
+			interactive := !flags.Changed("content") && !flags.Changed("status") && !starred && !unstarred
+			if interactive {
+				return a.editInteractively(cmd, svc, args[0], jsonOutput)
+			}
+
 			patch := task.Patch{}
-			if cmd.Flags().Changed("content") {
+			if flags.Changed("content") {
 				patch.Content = &content
 			}
-			if cmd.Flags().Changed("status") {
+			if flags.Changed("status") {
 				status, err := domain.ParseTaskStatus(statusValue)
 				if err != nil {
 					return err
@@ -67,10 +78,6 @@ func (a *app) newEditCommand() *cobra.Command {
 				value := starred
 				patch.Starred = &value
 			}
-			svc, err := a.taskService()
-			if err != nil {
-				return err
-			}
 			updated, err := svc.Update(args[0], patch)
 			if err != nil {
 				return err
@@ -79,7 +86,7 @@ func (a *app) newEditCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&content, "content", "", "replace task content")
-	cmd.Flags().StringVarP(&statusValue, "status", "s", "", "set task status")
+	cmd.Flags().StringVarP(&statusValue, "status", "s", "", "set task status: todo, doing, done, or archived")
 	cmd.Flags().BoolVar(&starred, "star", false, "mark the task as starred")
 	cmd.Flags().BoolVar(&unstarred, "unstar", false, "remove the starred mark")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
@@ -91,11 +98,11 @@ func (a *app) newDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "delete <id>",
 		Aliases: []string{"del", "rm"},
-		Short:   "Delete a task",
+		Short:   "Archive a task (reversible with restore)",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonOutput && !yes {
-				return fmt.Errorf("--json requires --yes when deleting a task")
+				return fmt.Errorf("--json requires --yes when archiving a task")
 			}
 			svc, err := a.taskService()
 			if err != nil {
@@ -105,28 +112,158 @@ func (a *app) newDeleteCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !yes {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Delete task %s (%s)? [y/N] ", item.Id, item.Content)
-				answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
-				answer = strings.ToLower(strings.TrimSpace(answer))
-				if answer != "y" && answer != "yes" {
-					fmt.Fprintln(cmd.OutOrStdout(), "Delete cancelled.")
-					return nil
-				}
+			if !yes && !confirm(cmd, fmt.Sprintf("Archive task %s (%s)?", item.Id, item.Content)) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Archive cancelled.")
+				return nil
 			}
-			if err := svc.Delete(item.Id); err != nil {
+			archived, err := svc.Archive(item.Id)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
-				return writeJSON(cmd.OutOrStdout(), map[string]string{"deleted_id": item.Id})
+				return writeJSON(cmd.OutOrStdout(), map[string]string{"archived_id": archived.Id})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted task %s.\n", item.Id)
+			fmt.Fprintf(cmd.OutOrStdout(), "Archived task %s. Restore it with: lazytodo restore %s\n", archived.Id, archived.Id)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
 	return cmd
+}
+
+// editInteractively opens the Bubble Tea form. It is only reached when the user
+// passed no field flags, so scripts and agents keep the non-interactive path.
+func (a *app) editInteractively(cmd *cobra.Command, svc *task.Service, taskID string, jsonOutput bool) error {
+	if a.runEditForm == nil {
+		return fmt.Errorf("interactive editing is not available; pass --content, --status, --star or --unstar")
+	}
+	item, err := svc.Get(taskID)
+	if err != nil {
+		return err
+	}
+	patch, changed, err := a.runEditForm(item)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		fmt.Fprintln(cmd.OutOrStdout(), "No changes.")
+		return nil
+	}
+	updated, err := svc.Update(taskID, patch)
+	if err != nil {
+		return err
+	}
+	return writeTask(cmd.OutOrStdout(), updated, jsonOutput)
+}
+
+func (a *app) newRestoreCommand() *cobra.Command {
+	var statusValue string
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "restore <id>",
+		Short: "Restore an archived task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			status, err := domain.ParseTaskStatus(statusValue)
+			if err != nil {
+				return err
+			}
+			svc, err := a.taskService()
+			if err != nil {
+				return err
+			}
+			restored, err := svc.Restore(args[0], status)
+			if err != nil {
+				return err
+			}
+			return writeTask(cmd.OutOrStdout(), restored, jsonOutput)
+		},
+	}
+	cmd.Flags().StringVarP(&statusValue, "status", "s", "todo", "status to restore into: todo, doing, or done")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
+	return cmd
+}
+
+func (a *app) newPurgeCommand() *cobra.Command {
+	var all, yes, jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "purge [id]",
+		Short: "Permanently delete a task or every archived task",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if all == (len(args) == 1) {
+				return fmt.Errorf("specify either an id or --all")
+			}
+			if jsonOutput && !yes {
+				return fmt.Errorf("--json requires --yes when purging")
+			}
+			svc, err := a.taskService()
+			if err != nil {
+				return err
+			}
+			if all {
+				return a.purgeAll(cmd, svc, yes, jsonOutput)
+			}
+			item, err := svc.Get(args[0])
+			if err != nil {
+				return err
+			}
+			if !yes && !confirm(cmd, fmt.Sprintf("Permanently delete task %s (%s)? This cannot be undone.", item.Id, item.Content)) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Purge cancelled.")
+				return nil
+			}
+			if err := svc.Purge(item.Id); err != nil {
+				return err
+			}
+			if jsonOutput {
+				return writeJSON(cmd.OutOrStdout(), map[string]string{"purged_id": item.Id})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Purged task %s.\n", item.Id)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "purge every archived task")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip confirmation")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
+	return cmd
+}
+
+func (a *app) purgeAll(cmd *cobra.Command, svc *task.Service, yes, jsonOutput bool) error {
+	archived := domain.TaskStatusArchived
+	items, err := svc.List(&archived)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		if jsonOutput {
+			return writeJSON(cmd.OutOrStdout(), map[string]int{"purged_count": 0})
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "No archived tasks to purge.")
+		return nil
+	}
+	if !yes && !confirm(cmd, fmt.Sprintf("Permanently delete %d archived task(s)? This cannot be undone.", len(items))) {
+		fmt.Fprintln(cmd.OutOrStdout(), "Purge cancelled.")
+		return nil
+	}
+	count, err := svc.PurgeArchived()
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeJSON(cmd.OutOrStdout(), map[string]int{"purged_count": count})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Purged %d archived task(s).\n", count)
+	return nil
+}
+
+// confirm prompts on stderr so that piping stdout stays machine-readable. A
+// read error with no input counts as a decline.
+func confirm(cmd *cobra.Command, prompt string) bool {
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s [y/N] ", prompt)
+	answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
 }
 
 func (a *app) newListCommand() *cobra.Command {
@@ -153,7 +290,7 @@ func (a *app) newListCommand() *cobra.Command {
 			return writeTasks(cmd.OutOrStdout(), items, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&statusValue, "status", "", "filter by task status")
+	cmd.Flags().StringVar(&statusValue, "status", "", "filter by task status; archived tasks are hidden unless you pass --status archived")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
 	return cmd
 }
@@ -204,7 +341,7 @@ func (a *app) newSearchCommand() *cobra.Command {
 			return writeTasks(cmd.OutOrStdout(), items, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&statusValue, "status", "", "filter by task status")
+	cmd.Flags().StringVar(&statusValue, "status", "", "filter by task status; archived tasks are hidden unless you pass --status archived")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON")
 	return cmd
 }

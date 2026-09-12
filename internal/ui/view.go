@@ -138,10 +138,15 @@ func (m Model) renderHelp(totalWidth int) string {
 		"s: star",
 		"n: new",
 		"e: edit",
-		"d/backspace/del: delete",
+		"d/backspace/del: archive",
 		"v: toggle layout",
 		"q: quit",
 		"esc: cancel",
+	}
+	// The sync indicator only appears when a remote is configured, so a purely
+	// local board keeps the footer it always had.
+	if syncer := m.svc.Syncer(); syncer != nil {
+		items = append(items, syncer.StatusLabel())
 	}
 
 	minColWidth := 22

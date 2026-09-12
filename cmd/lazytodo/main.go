@@ -10,10 +10,11 @@ import (
 
 func main() {
 	root := cli.NewRootCommand(cli.Dependencies{
-		RunUI: ui.Run,
-		In:    os.Stdin,
-		Out:   os.Stdout,
-		Err:   os.Stderr,
+		RunUI:       ui.Run,
+		RunEditForm: ui.RunEditForm,
+		In:          os.Stdin,
+		Out:         os.Stdout,
+		Err:         os.Stderr,
 	})
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

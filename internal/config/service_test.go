@@ -40,7 +40,7 @@ func TestSetStorageRootMovesTasksIntoLazytodoSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if newPath != filepath.Join(newRoot, "lazytodo", "tasks.json") {
+	if newPath != filepath.Join(newRoot, "lazytodo", "tasks.jsonl") {
 		t.Fatalf("new path = %q", newPath)
 	}
 	if _, err := os.Stat(newPath); err != nil {

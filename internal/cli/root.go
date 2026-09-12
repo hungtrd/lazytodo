@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/hungtrd/lazytodo/internal/domain"
+	"github.com/hungtrd/lazytodo/internal/gitsync"
 	"github.com/hungtrd/lazytodo/internal/repository"
 	repofs "github.com/hungtrd/lazytodo/internal/repository/fs"
 	"github.com/hungtrd/lazytodo/internal/task"
@@ -14,21 +16,32 @@ import (
 
 type UIRunner func(*task.Service) error
 
+// EditFormRunner opens an interactive editor for a task and reports the fields
+// the user changed. changed is false when nothing was edited or the form was
+// cancelled. It is injected so tests never need a terminal.
+type EditFormRunner func(domain.Task) (patch task.Patch, changed bool, err error)
+
 type Dependencies struct {
-	ConfigRepo repository.ConfigRepository
-	RunUI      UIRunner
-	In         io.Reader
-	Out        io.Writer
-	Err        io.Writer
+	ConfigRepo  repository.ConfigRepository
+	RunUI       UIRunner
+	RunEditForm EditFormRunner
+	In          io.Reader
+	Out         io.Writer
+	Err         io.Writer
 }
 
 type app struct {
-	configRepo repository.ConfigRepository
-	runUI      UIRunner
+	configRepo  repository.ConfigRepository
+	runUI       UIRunner
+	runEditForm EditFormRunner
+
+	// activeSyncer is set when a command built a task service with sync
+	// enabled, so the root command can flush the debounced push before exiting.
+	activeSyncer *gitsync.Service
 }
 
 func NewRootCommand(deps Dependencies) *cobra.Command {
-	app := &app{configRepo: deps.ConfigRepo, runUI: deps.RunUI}
+	app := &app{configRepo: deps.ConfigRepo, runUI: deps.RunUI, runEditForm: deps.RunEditForm}
 	if app.configRepo == nil {
 		app.configRepo = repofs.NewConfigStore()
 	}
@@ -58,6 +71,17 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 			}
 			return nil
 		},
+		// A CLI process is short lived, so the debounced push has to be
+		// completed here rather than left to a timer that never fires.
+		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
+			if app.activeSyncer == nil {
+				return nil
+			}
+			if err := app.activeSyncer.Flush(); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: sync failed: %v\n", err)
+			}
+			return nil
+		},
 	}
 	root.PersistentFlags().BoolVar(&uiMode, "ui", false, "run the terminal UI")
 	if deps.In != nil {
@@ -74,10 +98,13 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 		app.newCreateCommand(),
 		app.newEditCommand(),
 		app.newDeleteCommand(),
+		app.newRestoreCommand(),
+		app.newPurgeCommand(),
 		app.newListCommand(),
 		app.newShowCommand(),
 		app.newSearchCommand(),
 		app.newConfigCommand(),
+		app.newSyncCommand(),
 	)
 	configureUsageTemplate(root)
 	return root
@@ -121,5 +148,45 @@ func (a *app) taskService() (*task.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return task.NewService(repofs.NewTaskStoreAt(path), a.configRepo), nil
+	svc := task.NewService(repofs.NewTaskStoreAt(path), a.configRepo, repofs.NewSettingsStoreFor(path))
+
+	// Sync trouble must never stop a task operation, so a syncer that cannot be
+	// built is reported and then ignored.
+	if cfg.Git != nil && cfg.Git.Enabled {
+		syncer, err := a.syncer(cfg)
+		if err != nil {
+			return svc, nil
+		}
+		a.activeSyncer = syncer
+		svc.SetSyncer(syncer)
+	}
+	return svc, nil
+}
+
+// syncer builds a git syncer for the configured storage root.
+func (a *app) syncer(cfg repository.Config) (*gitsync.Service, error) {
+	if cfg.Git == nil {
+		return nil, fmt.Errorf("sync is not configured; run: lazytodo sync init <git-url>")
+	}
+	if cfg.StorageRoot == "" {
+		return nil, fmt.Errorf("sync needs a storage root; run: lazytodo sync init <git-url>")
+	}
+	logPath, err := repofs.SyncLogPath()
+	if err != nil {
+		return nil, err
+	}
+	return gitsync.New(cfg.StorageRoot, *cfg.Git, logPath)
+}
+
+// enabledSyncer is for commands that only make sense once sync is turned on.
+func (a *app) enabledSyncer() (repository.Config, *gitsync.Service, error) {
+	cfg, err := a.configRepo.Load()
+	if err != nil {
+		return repository.Config{}, nil, err
+	}
+	if cfg.Git == nil || !cfg.Git.Enabled {
+		return cfg, nil, fmt.Errorf("sync is not enabled; run: lazytodo sync init <git-url>")
+	}
+	syncer, err := a.syncer(cfg)
+	return cfg, syncer, err
 }

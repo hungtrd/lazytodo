@@ -12,10 +12,15 @@ import (
 )
 
 const (
-	defaultDirName = ".lazytodo"
-	customDirName  = "lazytodo"
-	tasksFileName  = "tasks.json"
-	configFileName = "config.json"
+	defaultDirName  = ".lazytodo"
+	customDirName   = "lazytodo"
+	tasksFileName   = "tasks.jsonl"
+	configFileName  = "config.json"
+	syncLogFileName = "sync.log"
+
+	// legacyTasksFileName is the pre-v4 single-document JSON store. It is read
+	// once during migration and then removed.
+	legacyTasksFileName = "tasks.json"
 )
 
 func defaultDir() (string, error) {
@@ -34,6 +39,16 @@ func ConfigFilePath() (string, error) {
 	return filepath.Join(dir, configFileName), nil
 }
 
+// SyncLogPath is where git sync records failures. It stays machine-local so it
+// is never pushed to the sync remote.
+func SyncLogPath() (string, error) {
+	dir, err := defaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, syncLogFileName), nil
+}
+
 func TasksFilePath(cfg repository.Config) (string, error) {
 	if cfg.StorageRoot == "" {
 		dir, err := defaultDir()
@@ -43,6 +58,15 @@ func TasksFilePath(cfg repository.Config) (string, error) {
 		return filepath.Join(dir, tasksFileName), nil
 	}
 	return filepath.Join(cfg.StorageRoot, customDirName, tasksFileName), nil
+}
+
+// LegacyTasksFilePath returns the pre-v4 single-document JSON path that
+// corresponds to a given tasks file, so a store can migrate it on first load.
+func LegacyTasksFilePath(tasksPath string) string {
+	if strings.HasSuffix(tasksPath, ".jsonl") {
+		return strings.TrimSuffix(tasksPath, "l")
+	}
+	return filepath.Join(filepath.Dir(tasksPath), legacyTasksFileName)
 }
 
 func ResolveStorageRoot(value string) (string, error) {

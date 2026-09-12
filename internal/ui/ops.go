@@ -7,9 +7,13 @@ import (
 )
 
 func (m Model) moveTask(from domain.TaskStatus, index int, to domain.TaskStatus) Model {
-	if from == to { return m }
+	if from == to {
+		return m
+	}
 	list := m.tasksByStatus[from]
-	if index < 0 || index >= len(list) { return m }
+	if index < 0 || index >= len(list) {
+		return m
+	}
 	task := list[index]
 	_ = m.svc.Move(task.Id, to)
 	// update local state similarly
@@ -25,9 +29,13 @@ func (m Model) moveTask(from domain.TaskStatus, index int, to domain.TaskStatus)
 	return m
 }
 
-func (m *Model) deleteTask(status domain.TaskStatus, index int) {
+// removeFromColumn drops a row from the in-memory column after the service has
+// already archived or purged it.
+func (m *Model) removeFromColumn(status domain.TaskStatus, index int) {
 	list := m.tasksByStatus[status]
-	if index < 0 || index >= len(list) { return }
+	if index < 0 || index >= len(list) {
+		return
+	}
 	m.tasksByStatus[status] = append(list[:index], list[index+1:]...)
 	if index >= len(m.tasksByStatus[status]) {
 		m.selectedIdx[status] = max(0, len(m.tasksByStatus[status])-1)

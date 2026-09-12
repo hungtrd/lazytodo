@@ -6,11 +6,9 @@ import (
 	"github.com/hungtrd/lazytodo/internal/domain"
 )
 
-var statusOrder = []domain.TaskStatus{
-	domain.TaskStatusTodo,
-	domain.TaskStatusDoing,
-	domain.TaskStatusDone,
-}
+// statusOrder drives the kanban columns. Archived tasks are intentionally
+// absent: they are reachable only through the CLI.
+var statusOrder = domain.ActiveStatuses()
 
 func statusTitle(s domain.TaskStatus) string {
 	switch s {
@@ -20,6 +18,8 @@ func statusTitle(s domain.TaskStatus) string {
 		return "Doing"
 	case domain.TaskStatusDone:
 		return "Done"
+	case domain.TaskStatusArchived:
+		return "Archived"
 	default:
 		return "Unknown"
 	}
