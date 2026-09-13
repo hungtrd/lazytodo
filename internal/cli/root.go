@@ -105,6 +105,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 		app.newSearchCommand(),
 		app.newConfigCommand(),
 		app.newSyncCommand(),
+		newVersionCommand(),
 	)
 	configureUsageTemplate(root)
 	return root

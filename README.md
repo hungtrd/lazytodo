@@ -52,6 +52,10 @@ lazytodo list --status todo
 lazytodo show 1
 lazytodo search "milk"
 
+# Check the installed version
+lazytodo version
+lazytodo version --verbose
+
 # Machine-readable output
 lazytodo list --json
 lazytodo show 1 --json
